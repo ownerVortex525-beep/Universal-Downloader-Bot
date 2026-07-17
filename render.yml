@@ -1,5 +1,5 @@
 services:
-  - type: web
+  - type: worker
     name: universal-downloader-bot
     env: python
     buildCommand: |
@@ -33,7 +33,6 @@ services:
         - keyboards.py
         - utils.py
         - requirements.txt
-    healthCheckPath: /health
     autoDeploy: true
 
 databases:

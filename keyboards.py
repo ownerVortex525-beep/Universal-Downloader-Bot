@@ -31,33 +31,36 @@ def get_main_menu():
     return InlineKeyboardMarkup(keyboard)
 
 def get_download_options(url: str, platform: str):
-    """Get download options based on platform"""
-    keyboard = []
+    """Get download options based on platform.
     
+    URL is stored in user_data, callback data only contains short action keys.
+    """
+    keyboard = []
+
     if platform == "youtube":
         keyboard = [
-            [InlineKeyboardButton("📹 Best Quality", callback_data=f"dl_{platform}_video_best_{url}")],
-            [InlineKeyboardButton("📹 1080p", callback_data=f"dl_{platform}_video_1080_{url}")],
-            [InlineKeyboardButton("📹 720p", callback_data=f"dl_{platform}_video_720_{url}")],
-            [InlineKeyboardButton("📹 480p", callback_data=f"dl_{platform}_video_480_{url}")],
-            [InlineKeyboardButton("🎵 Audio (MP3)", callback_data=f"dl_{platform}_audio_best_{url}")],
-            [InlineKeyboardButton("🖼️ Thumbnail", callback_data=f"dl_{platform}_thumbnail_{url}")]
+            [InlineKeyboardButton("📹 Best Quality", callback_data="dl_video_best")],
+            [InlineKeyboardButton("📹 1080p", callback_data="dl_video_1080")],
+            [InlineKeyboardButton("📹 720p", callback_data="dl_video_720")],
+            [InlineKeyboardButton("📹 480p", callback_data="dl_video_480")],
+            [InlineKeyboardButton("🎵 Audio (MP3)", callback_data="dl_audio_best")],
+            [InlineKeyboardButton("🖼️ Thumbnail", callback_data="dl_thumbnail_best")]
         ]
     elif platform == "instagram":
         keyboard = [
-            [InlineKeyboardButton("📹 Video", callback_data=f"dl_{platform}_video_{url}")],
-            [InlineKeyboardButton("🖼️ Image", callback_data=f"dl_{platform}_image_{url}")],
-            [InlineKeyboardButton("📂 All Content", callback_data=f"dl_{platform}_all_{url}")]
+            [InlineKeyboardButton("📹 Video", callback_data="dl_video_best")],
+            [InlineKeyboardButton("🖼️ Image", callback_data="dl_image_best")],
+            [InlineKeyboardButton("📂 All Content", callback_data="dl_all_best")]
         ]
     elif platform == "tiktok":
         keyboard = [
-            [InlineKeyboardButton("📹 No Watermark", callback_data=f"dl_{platform}_video_nwm_{url}")],
-            [InlineKeyboardButton("📹 Original", callback_data=f"dl_{platform}_video_orig_{url}")]
+            [InlineKeyboardButton("📹 No Watermark", callback_data="dl_video_nwm")],
+            [InlineKeyboardButton("📹 Original", callback_data="dl_video_orig")]
         ]
     else:
         keyboard = [
-            [InlineKeyboardButton("📥 Download", callback_data=f"dl_{platform}_any_{url}")]
+            [InlineKeyboardButton("📥 Download", callback_data="dl_any_best")]
         ]
-    
+
     keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="menu")])
     return InlineKeyboardMarkup(keyboard)
