@@ -1,5 +1,6 @@
 python-telegram-bot==20.7
 yt-dlp==2024.11.04
+instagrapi==2.1.4
 requests==2.32.3
 pillow==10.4.0
 python-dotenv==1.0.1

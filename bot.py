@@ -17,7 +17,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import our modules
-from config import BOT_TOKEN, CHANNEL_ID, ADMIN_IDS, DATABASE_URL
+from config import BOT_TOKEN, CHANNEL_ID, ADMIN_IDS, DATABASE_URL, FORCE_CHANNEL_USERNAME, FORCE_CHANNEL_ID
 from database import SessionLocal, User, Download
 from keyboards import get_main_menu, get_download_options
 from downloader import (
@@ -73,7 +73,6 @@ def save_download(user_id: int, url: str, platform: str, file_type: str, status:
         )
         session.add(download)
 
-        # Update user download count
         user = session.query(User).filter_by(telegram_id=user_id).first()
         if user:
             user.download_count += 1
@@ -116,8 +115,36 @@ async def log_to_channel(context: ContextTypes.DEFAULT_TYPE, user_info: Dict, ac
         _channel_warning_sent = False
     except Exception as e:
         if not _channel_warning_sent:
-            logger.warning(f"Channel logging failed (check CHANNEL_ID and bot is in channel): {e}")
+            logger.warning(f"Channel logging failed: {e}")
             _channel_warning_sent = True
+
+# ============ FORCE CHANNEL JOIN ============
+
+async def check_channel_membership(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
+    """Check if user is a member of the force channel"""
+    if not FORCE_CHANNEL_ID:
+        return True
+
+    try:
+        member = await context.bot.get_chat_member(
+            chat_id=FORCE_CHANNEL_ID,
+            user_id=user_id
+        )
+        status = member.status
+        if status in ['member', 'administrator', 'creator']:
+            return True
+        return False
+    except Exception as e:
+        logger.warning(f"Channel membership check failed: {e}")
+        return True
+
+def get_force_channel_keyboard():
+    """Get keyboard with channel join button"""
+    keyboard = [
+        [InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{FORCE_CHANNEL_USERNAME}")],
+        [InlineKeyboardButton("✅ I Joined", callback_data="check_join")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
 # ============ COMMAND HANDLERS ============
 
@@ -125,16 +152,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
     user_info = get_user_info(update)
 
-    # Save user to database
     save_user(user_info['id'], user_info['username'], user_info['first_name'], user_info['last_name'])
 
-    # Log to channel
     await log_to_channel(
         context,
         user_info,
         "NEW USER",
         f"User @{user_info['username']} started the bot"
     )
+
+    # Check channel membership
+    if FORCE_CHANNEL_ID:
+        is_member = await check_channel_membership(context, user_info['id'])
+        if not is_member:
+            await update.message.reply_text(
+                f"<b>Welcome {user_info['first_name']}!</b>\n\n"
+                f"To use this bot, you must first join our channel.\n\n"
+                f"📢 <b>Join:</b> @{FORCE_CHANNEL_USERNAME}\n\n"
+                f"After joining, click <b>I Joined</b> below.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_force_channel_keyboard()
+            )
+            return
 
     welcome = (
         f"<b>UNIVERSAL DOWNLOADER BOT</b>\n\n"
@@ -161,6 +200,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /help command"""
+    user_info = get_user_info(update)
+
+    # Check channel membership first
+    if FORCE_CHANNEL_ID:
+        is_member = await check_channel_membership(context, user_info['id'])
+        if not is_member:
+            await update.message.reply_text(
+                f"<b>Please join our channel first!</b>\n\n"
+                f"📢 <b>Join:</b> @{FORCE_CHANNEL_USERNAME}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_force_channel_keyboard()
+            )
+            return
+
     help_text = (
         "<b>UNIVERSAL DOWNLOADER - HELP</b>\n\n"
         "<b>How to Use:</b>\n"
@@ -169,7 +222,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "3. Wait for download to complete\n\n"
         "<b>Supported Platforms:</b>\n"
         "YouTube - Video/Audio/Thumbnail\n"
-        "Instagram - Video/Image/All content\n"
+        "Instagram - Video/Image\n"
         "TikTok - Video (No watermark available)\n"
         "Twitter/X - Videos &amp; Media\n"
         "Facebook - Videos &amp; Images\n"
@@ -182,12 +235,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/stats - View your download statistics\n\n"
         "<b>Limits:</b>\n"
         "Max file: 50MB\n"
-        "Rate limit: 10 downloads/minute\n"
-        "Files auto-delete after sending\n\n"
-        "<b>Tips:</b>\n"
-        "For YouTube, choose lower quality for faster downloads\n"
-        "TikTok downloads are watermark-free\n"
-        "Use Any URL for direct file downloads"
+        "Files auto-delete after sending"
     )
     await update.message.reply_text(
         help_text,
@@ -198,6 +246,18 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /stats command"""
     user_info = get_user_info(update)
+
+    # Check channel membership first
+    if FORCE_CHANNEL_ID:
+        is_member = await check_channel_membership(context, user_info['id'])
+        if not is_member:
+            await update.message.reply_text(
+                f"<b>Please join our channel first!</b>\n\n"
+                f"📢 <b>Join:</b> @{FORCE_CHANNEL_USERNAME}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_force_channel_keyboard()
+            )
+            return
 
     session = SessionLocal()
     try:
@@ -231,7 +291,19 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
     user_info = get_user_info(update)
 
-    # Validate URL
+    # Check channel membership first
+    if FORCE_CHANNEL_ID:
+        is_member = await check_channel_membership(context, user_info['id'])
+        if not is_member:
+            await update.message.reply_text(
+                f"<b>Please join our channel first!</b>\n\n"
+                f"📢 <b>Join:</b> @{FORCE_CHANNEL_USERNAME}\n\n"
+                f"After joining, click <b>I Joined</b> below.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_force_channel_keyboard()
+            )
+            return
+
     if not (url.startswith('http://') or url.startswith('https://')):
         await update.message.reply_text(
             "<b>Invalid URL!</b>\n\n"
@@ -242,7 +314,6 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Detect platform
     platform = get_platform_from_url(url)
 
     if platform == 'unknown':
@@ -254,7 +325,6 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🔗 Any URL", callback_data="platform_any")],
             [InlineKeyboardButton("🔙 Back", callback_data="menu")]
         ]
-        # Store URL in user_data for when they pick a platform
         context.user_data['pending_url'] = url
         await update.message.reply_text(
             "<b>Platform Not Detected</b>\n\n"
@@ -264,11 +334,9 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Store URL in user_data (avoids 64-byte callback data limit)
     context.user_data['current_url'] = url
     context.user_data['current_platform'] = platform
 
-    # Log to channel
     await log_to_channel(
         context,
         user_info,
@@ -276,7 +344,6 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Platform: {platform.upper()}\nURL: {url[:100]}"
     )
 
-    # Show download options
     await update.message.reply_text(
         f"<b>Platform Detected:</b> {platform.upper()}\n\n"
         f"<b>URL:</b> <code>{url[:100]}{'...' if len(url) > 100 else ''}</code>\n\n"
@@ -295,9 +362,44 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_info = get_user_info(update)
 
+    # ===== FORCE CHANNEL JOIN CHECK =====
+    if data == "check_join":
+        if FORCE_CHANNEL_ID:
+            is_member = await check_channel_membership(context, user_info['id'])
+            if not is_member:
+                await query.edit_message_text(
+                    f"<b>You haven't joined yet!</b>\n\n"
+                    f"📢 <b>Join:</b> @{FORCE_CHANNEL_USERNAME}\n\n"
+                    f"Click <b>I Joined</b> after joining.",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=get_force_channel_keyboard()
+                )
+                return
+
+        await query.edit_message_text(
+            "<b>Welcome!</b>\n\n"
+            "You can now use the bot.\n"
+            "Send me any link or use the buttons below:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_main_menu()
+        )
+        return
+
+    # ===== Check channel membership for all other callbacks =====
+    if FORCE_CHANNEL_ID:
+        is_member = await check_channel_membership(context, user_info['id'])
+        if not is_member:
+            await query.edit_message_text(
+                f"<b>Please join our channel first!</b>\n\n"
+                f"📢 <b>Join:</b> @{FORCE_CHANNEL_USERNAME}\n\n"
+                f"After joining, click <b>I Joined</b> below.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_force_channel_keyboard()
+            )
+            return
+
     # ===== MENU NAVIGATION =====
     if data == "menu":
-        # Clear stored URL on menu return
         context.user_data.pop('current_url', None)
         context.user_data.pop('current_platform', None)
         context.user_data.pop('pending_url', None)
@@ -380,8 +482,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "<b>Support Development</b>\n\n"
             "If you find this bot useful, consider supporting:\n\n"
             "UPI: your-upi@okhdfc\n"
-            "PayPal: your-paypal@email.com\n"
-            "Buy Me Coffee: buymeacoffee.com/yourname\n\n"
+            "PayPal: your-paypal@email.com\n\n"
             "Your support keeps this bot running!",
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup([
@@ -394,11 +495,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("platform_"):
         platform = data.replace("platform_", "", 1)
 
-        # Check if there's a pending URL from an unknown platform
         pending_url = context.user_data.get('pending_url')
 
         if pending_url:
-            # User selected a platform for their unknown URL
             context.user_data['current_url'] = pending_url
             context.user_data['current_platform'] = platform
             context.user_data.pop('pending_url', None)
@@ -411,7 +510,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_download_options(pending_url, platform)
             )
         else:
-            # User clicked a platform from main menu - ask for URL
             context.user_data['pending_platform'] = platform
             await query.edit_message_text(
                 f"<b>{platform.upper()} Download</b>\n\n"
@@ -426,12 +524,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ===== DOWNLOAD HANDLER =====
     if data.startswith("dl_"):
-        # Parse short callback: dl_{format}_{quality}
         parts = data.split("_")
         format_type = parts[1] if len(parts) > 1 else "video"
         quality = parts[2] if len(parts) > 2 else "best"
 
-        # Retrieve URL and platform from user_data
         url = context.user_data.get('current_url')
         platform = context.user_data.get('current_platform')
 
@@ -443,17 +539,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Send processing message
         processing_msg = await query.edit_message_text(
             f"<b>Processing...</b>\n\n"
             f"Downloading from <b>{platform.upper()}</b>\n"
             f"<code>{url[:50]}...</code>\n\n"
-            f"Please wait, this may take a moment...",
+            f"Please wait...",
             parse_mode=ParseMode.HTML
         )
 
         try:
-            # Perform download
             file_path = None
             filename = None
 
@@ -467,7 +561,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 file_path, filename = await download_generic(url)
 
             if file_path and os.path.exists(file_path):
-                # Check file size
                 file_size = os.path.getsize(file_path) / (1024 * 1024)
                 max_size = int(os.getenv('MAX_FILE_SIZE', 50))
 
@@ -481,7 +574,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     shutil.rmtree(os.path.dirname(file_path), ignore_errors=True)
                     return
 
-                # Send the file
                 with open(file_path, 'rb') as f:
                     if format_type == 'audio':
                         await context.bot.send_audio(
@@ -503,17 +595,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 caption=f"{filename}\n\nDownloaded from {platform.upper()}"
                             )
                         except Exception:
-                            # Fallback to document if video fails
                             await context.bot.send_document(
                                 chat_id=update.effective_chat.id,
                                 document=f,
                                 caption=f"{filename}\n\nDownloaded from {platform.upper()}"
                             )
 
-                # Save to database
                 save_download(user_info['id'], url, platform, format_type, 'success')
 
-                # Clean up entire temp directory safely
                 shutil.rmtree(os.path.dirname(file_path), ignore_errors=True)
 
                 await processing_msg.delete()
@@ -526,11 +615,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML
                 )
 
-                # Clear stored URL after successful download
                 context.user_data.pop('current_url', None)
                 context.user_data.pop('current_platform', None)
 
-                # Log success
                 await log_to_channel(
                     context,
                     user_info,
@@ -585,7 +672,6 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Start the bot"""
-    # Check for required environment variables
     if not BOT_TOKEN:
         logger.error("BOT_TOKEN not set!")
         sys.exit(1)
@@ -593,29 +679,26 @@ def main():
     if not CHANNEL_ID:
         logger.warning("CHANNEL_ID not set - channel logging disabled")
 
-    # Create application
+    if FORCE_CHANNEL_ID:
+        logger.info(f"Force channel: @{FORCE_CHANNEL_USERNAME} (ID: {FORCE_CHANNEL_ID})")
+    else:
+        logger.warning("FORCE_CHANNEL_ID not set - channel join not required")
+
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Add command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("stats", stats_command))
 
-    # Add URL handler
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
 
-    # Add callback query handler
     application.add_handler(CallbackQueryHandler(handle_callback))
 
-    # Add error handler
     application.add_error_handler(error_handler)
 
-    # Start bot
     logger.info("Universal Downloader Bot is starting...")
     logger.info(f"Channel ID: {CHANNEL_ID}")
-    logger.info(f"Admins: {ADMIN_IDS}")
 
-    # Run the bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
