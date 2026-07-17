@@ -90,8 +90,11 @@ def save_download(user_id: int, url: str, platform: str, file_type: str, status:
 
 # ============ CHANNEL LOGGING ============
 
+_channel_warning_sent = False
+
 async def log_to_channel(context: ContextTypes.DEFAULT_TYPE, user_info: Dict, action: str, details: str = ""):
     """Send user activity to destination channel"""
+    global _channel_warning_sent
     if not CHANNEL_ID:
         return
 
@@ -110,8 +113,11 @@ async def log_to_channel(context: ContextTypes.DEFAULT_TYPE, user_info: Dict, ac
             text=message,
             parse_mode=ParseMode.HTML
         )
+        _channel_warning_sent = False
     except Exception as e:
-        logger.error(f"Failed to log to channel: {e}")
+        if not _channel_warning_sent:
+            logger.warning(f"Channel logging failed (check CHANNEL_ID and bot is in channel): {e}")
+            _channel_warning_sent = True
 
 # ============ COMMAND HANDLERS ============
 

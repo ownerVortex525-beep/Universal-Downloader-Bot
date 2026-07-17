@@ -72,7 +72,7 @@ async def download_youtube(url: str, format_type: str = 'video', quality: str = 
         return None, str(e)
 
 async def download_instagram(url: str, content_type: str = 'all') -> Tuple[Optional[str], str]:
-    """Download Instagram content using yt-dlp (replaces broken instaloader)"""
+    """Download Instagram content using yt-dlp with browser cookies"""
     try:
         temp_dir = _get_temp_dir()
         output_template = f"{temp_dir}/%(title)s.%(ext)s"
@@ -84,6 +84,12 @@ async def download_instagram(url: str, content_type: str = 'all') -> Tuple[Optio
             'no_warnings': True,
             'socket_timeout': 30,
             'extract_flat': False,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Referer': 'https://www.instagram.com/',
+            },
         }
 
         if content_type == 'thumbnail':
@@ -98,9 +104,13 @@ async def download_instagram(url: str, content_type: str = 'all') -> Tuple[Optio
                 file_path = os.path.join(temp_dir, downloaded_files[0])
                 title = info.get('title', 'Instagram Post')
                 return file_path, title
-            return None, "No media found - Instagram may require login"
+            return None, "No media found"
 
     except Exception as e:
+        error_str = str(e).lower()
+        if '401' in error_str or 'login' in error_str:
+            logger.error("Instagram requires login - 401 error")
+            return None, "Instagram requires login to download this content. This is a known limitation."
         logger.error(f"Instagram download error: {e}")
         return None, f"Instagram download failed: {str(e)[:100]}"
 
@@ -117,6 +127,9 @@ async def download_tiktok(url: str, no_watermark: bool = True) -> Tuple[Optional
             'no_warnings': True,
             'socket_timeout': 30,
             'extract_flat': False,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -134,7 +147,7 @@ async def download_tiktok(url: str, no_watermark: bool = True) -> Tuple[Optional
         return None, str(e)
 
 async def download_generic(url: str) -> Tuple[Optional[str], str]:
-    """Download any URL content - try yt-dlp first, then direct download"""
+    """Download any URL content"""
     try:
         temp_dir = _get_temp_dir()
         output_template = f"{temp_dir}/%(title)s.%(ext)s"
@@ -145,6 +158,9 @@ async def download_generic(url: str) -> Tuple[Optional[str], str]:
             'quiet': True,
             'no_warnings': True,
             'socket_timeout': 30,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            },
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
